@@ -513,12 +513,12 @@
 
     <script>
         // 存储评论的数组
-        let comments = JSON.parse(localStorage.getItem('novelComments')) || [];
+        let comments = [];
         let currentPage = 1;
         const commentsPerPage = 10;
         
-        // 初始化显示评论数量
-        updateCommentCount();
+        // 初始化加载评论数据
+        loadComments();
         
         // 显示标签页
         function showTab(tabName) {
@@ -538,13 +538,31 @@
             }
         }
         
+        // 从服务器加载评论数据
+        async function loadComments() {
+            try {
+                const response = await fetch('/api/comments');
+                if (response.ok) {
+                    comments = await response.json();
+                    updateCommentCount();
+                    displayComments(comments);
+                } else {
+                    console.error('Failed to load comments:', response.statusText);
+                    showAlert('加载评论失败', 'error');
+                }
+            } catch (error) {
+                console.error('Error loading comments:', error);
+                showAlert('网络错误，无法加载评论', 'error');
+            }
+        }
+        
         // 更新评论计数
         function updateCommentCount() {
             document.getElementById('count').textContent = comments.length;
         }
         
         // 表单提交处理
-        document.getElementById('commentForm').addEventListener('submit', function(e) {
+        document.getElementById('commentForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             
             const username = document.getElementById('username').value.trim();
@@ -557,25 +575,38 @@
             }
             
             const newComment = {
-                id: Date.now(),
                 username: username,
                 novelName: novelName,
                 readTime: readTime,
-                content: content,
-                date: new Date().toISOString(),
-                displayDate: formatDateTime(new Date())
+                content: content
             };
             
-            comments.unshift(newComment);
-            localStorage.setItem('novelComments', JSON.stringify(comments));
-            displayComments(comments);
-            this.reset();
-            currentPage = 1;
-            updatePagination();
-            updateCommentCount();
-            
-            // 显示成功提示
-            showAlert('评论提交成功！', 'success');
+            try {
+                const response = await fetch('/api/comments', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(newComment)
+                });
+                
+                if (response.ok) {
+                    const savedComment = await response.json();
+                    // 重新加载评论列表
+                    await loadComments();
+                    this.reset();
+                    currentPage = 1;
+                    
+                    // 显示成功提示
+                    showAlert('评论提交成功！', 'success');
+                } else {
+                    const error = await response.json();
+                    showAlert(error.error || '提交失败', 'error');
+                }
+            } catch (error) {
+                console.error('Error submitting comment:', error);
+                showAlert('网络错误，提交失败', 'error');
+            }
         });
         
         // 输入验证
@@ -866,26 +897,50 @@
         }
         
         // 删除评论
-        function deleteComment(commentId) {
+        async function deleteComment(commentId) {
             if(confirm('确定要删除这条评论吗？')) {
-                comments = comments.filter(comment => comment.id !== commentId);
-                localStorage.setItem('novelComments', JSON.stringify(comments));
-                displayComments(getFilteredComments());
-                updateCommentCount();
-                showAlert('评论已删除', 'success');
-                updateExportOptions();
+                try {
+                    const response = await fetch(`/api/comments/${commentId}`, {
+                        method: 'DELETE'
+                    });
+                    
+                    if (response.ok) {
+                        // 重新加载评论列表
+                        await loadComments();
+                        showAlert('评论已删除', 'success');
+                        updateExportOptions();
+                    } else {
+                        const error = await response.json();
+                        showAlert(error.error || '删除失败', 'error');
+                    }
+                } catch (error) {
+                    console.error('Error deleting comment:', error);
+                    showAlert('网络错误，删除失败', 'error');
+                }
             }
         }
         
         // 清空所有评论
-        function clearAllComments() {
+        async function clearAllComments() {
             if(confirm('确定要清空所有评论吗？此操作不可恢复！')) {
-                comments = [];
-                localStorage.removeItem('novelComments');
-                displayComments([]);
-                updateCommentCount();
-                showAlert('所有评论已清空', 'success');
-                updateExportOptions();
+                try {
+                    const response = await fetch('/api/comments', {
+                        method: 'DELETE'
+                    });
+                    
+                    if (response.ok) {
+                        // 重新加载评论列表
+                        await loadComments();
+                        showAlert('所有评论已清空', 'success');
+                        updateExportOptions();
+                    } else {
+                        const error = await response.json();
+                        showAlert(error.error || '清空失败', 'error');
+                    }
+                } catch (error) {
+                    console.error('Error clearing comments:', error);
+                    showAlert('网络错误，清空失败', 'error');
+                }
             }
         }
         
@@ -992,8 +1047,10 @@
             showAlert('JSON文件已导出', 'success');
         }
         
-        // 初始加载
-        displayComments(comments);
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            loadComments();
+        });
     </script>
 </body>
 </html>
