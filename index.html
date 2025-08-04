@@ -189,6 +189,17 @@
             background-color: rgba(92, 107, 192, 0.1);
         }
         
+        .btn:disabled {
+            background-color: #cfd8dc;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+        
+        .btn:disabled:hover {
+            background-color: #cfd8dc;
+            transform: none;
+        }
+        
         .filter-section {
             margin: 25px 0;
         }
@@ -213,6 +224,21 @@
             border-bottom: 1px solid #f0f0f0;
             padding: 20px 0;
             transition: var(--transition);
+            position: relative;
+        }
+        
+        .comment-checkbox {
+            position: absolute;
+            top: 20px;
+            left: 0;
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+        
+        .comment.selected {
+            background-color: rgba(92, 107, 192, 0.08);
+            border-left: 4px solid var(--primary-color);
         }
         
         .comment:hover {
@@ -228,6 +254,7 @@
             justify-content: space-between;
             margin-bottom: 12px;
             align-items: center;
+            margin-left: 30px;
         }
         
         .comment-title {
@@ -246,12 +273,14 @@
         .comment-content {
             line-height: 1.7;
             margin-bottom: 10px;
+            margin-left: 30px;
         }
         
         .comment-actions {
             display: flex;
             gap: 10px;
             justify-content: flex-end;
+            margin-left: 30px;
         }
         
         .pagination {
@@ -463,13 +492,19 @@
             </div>
             
             <div class="card">
-                <h2><i class="fas fa-list"></i> 评论列表</h2>
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
+                    <h2 style="margin-bottom: 0;"><i class="fas fa-list"></i> 评论列表</h2>
+                    <label style="display: flex; align-items: center; font-weight: normal; margin-bottom: 0;">
+                        <input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll(this)" style="margin-right: 8px;">
+                        全选
+                    </label>
+                </div>
                 <div id="commentsContainer" class="comment-list"></div>
                 <div class="pagination" id="pagination"></div>
                 
                 <div class="action-buttons">
                     <button onclick="toggleExportOptions()" class="btn btn-secondary"><i class="fas fa-file-export"></i> 导出选项</button>
-                    <button onclick="clearAllComments()" class="btn btn-danger"><i class="fas fa-trash"></i> 清空所有评论</button>
+                    <button onclick="deleteSelectedComments()" class="btn btn-danger" id="deleteSelectedBtn" disabled><i class="fas fa-trash"></i> 删除评论</button>
                 </div>
                 
                 <div id="exportOptions" class="export-options">
@@ -516,6 +551,7 @@
         let comments = [];
         let currentPage = 1;
         const commentsPerPage = 10;
+        let selectedComments = new Set();
         
         // 初始化加载评论数据
         loadComments();
@@ -700,6 +736,11 @@
             const container = document.getElementById('commentsContainer');
             container.innerHTML = '';
             
+            // 清理选择状态
+            selectedComments.clear();
+            updateDeleteButton();
+            updateSelectAllCheckbox();
+            
             if(commentsToDisplay.length === 0) {
                 container.innerHTML = `
                     <div class="empty-state">
@@ -720,7 +761,9 @@
             paginatedComments.forEach(comment => {
                 const commentElement = document.createElement('div');
                 commentElement.className = 'comment';
+                commentElement.setAttribute('data-comment-id', comment.id);
                 commentElement.innerHTML = `
+                    <input type="checkbox" class="comment-checkbox" onchange="toggleCommentSelection(${comment.id}, this)">
                     <div class="comment-header">
                         <div>
                             <div class="comment-title">《${comment.novelName}》</div>
@@ -920,26 +963,106 @@
             }
         }
         
-        // 清空所有评论
-        async function clearAllComments() {
-            if(confirm('确定要清空所有评论吗？此操作不可恢复！')) {
+        // 切换评论选择状态
+        function toggleCommentSelection(commentId, checkbox) {
+            if (checkbox.checked) {
+                selectedComments.add(commentId);
+                checkbox.closest('.comment').classList.add('selected');
+            } else {
+                selectedComments.delete(commentId);
+                checkbox.closest('.comment').classList.remove('selected');
+            }
+            updateDeleteButton();
+            updateSelectAllCheckbox();
+        }
+        
+        // 全选/取消全选
+        function toggleSelectAll(selectAllCheckbox) {
+            const commentCheckboxes = document.querySelectorAll('.comment-checkbox');
+            
+            if (selectAllCheckbox.checked) {
+                // 全选
+                commentCheckboxes.forEach(checkbox => {
+                    const commentId = parseInt(checkbox.getAttribute('onchange').match(/\d+/)[0]);
+                    checkbox.checked = true;
+                    selectedComments.add(commentId);
+                    checkbox.closest('.comment').classList.add('selected');
+                });
+            } else {
+                // 取消全选
+                commentCheckboxes.forEach(checkbox => {
+                    const commentId = parseInt(checkbox.getAttribute('onchange').match(/\d+/)[0]);
+                    checkbox.checked = false;
+                    selectedComments.delete(commentId);
+                    checkbox.closest('.comment').classList.remove('selected');
+                });
+            }
+            updateDeleteButton();
+        }
+        
+        // 更新全选复选框状态
+        function updateSelectAllCheckbox() {
+            const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+            const commentCheckboxes = document.querySelectorAll('.comment-checkbox');
+            const checkedCheckboxes = document.querySelectorAll('.comment-checkbox:checked');
+            
+            if (commentCheckboxes.length === 0) {
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.indeterminate = false;
+            } else if (checkedCheckboxes.length === commentCheckboxes.length) {
+                selectAllCheckbox.checked = true;
+                selectAllCheckbox.indeterminate = false;
+            } else if (checkedCheckboxes.length > 0) {
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.indeterminate = true;
+            } else {
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.indeterminate = false;
+            }
+        }
+        
+        // 更新删除按钮状态
+        function updateDeleteButton() {
+            const deleteBtn = document.getElementById('deleteSelectedBtn');
+            if (selectedComments.size > 0) {
+                deleteBtn.disabled = false;
+                deleteBtn.innerHTML = `<i class="fas fa-trash"></i> 删除评论 (${selectedComments.size})`;
+            } else {
+                deleteBtn.disabled = true;
+                deleteBtn.innerHTML = '<i class="fas fa-trash"></i> 删除评论';
+            }
+        }
+        
+        // 删除选中的评论
+        async function deleteSelectedComments() {
+            if (selectedComments.size === 0) {
+                showAlert('请先选择要删除的评论', 'error');
+                return;
+            }
+            
+            const count = selectedComments.size;
+            if(confirm(`确定要删除选中的 ${count} 条评论吗？此操作不可恢复！`)) {
                 try {
-                    const response = await fetch('/api/comments', {
-                        method: 'DELETE'
-                    });
+                    const deletePromises = Array.from(selectedComments).map(commentId =>
+                        fetch(`/api/comments/${commentId}`, { method: 'DELETE' })
+                    );
                     
-                    if (response.ok) {
+                    const responses = await Promise.all(deletePromises);
+                    const allSuccessful = responses.every(response => response.ok);
+                    
+                    if (allSuccessful) {
                         // 重新加载评论列表
                         await loadComments();
-                        showAlert('所有评论已清空', 'success');
+                        selectedComments.clear();
+                        updateDeleteButton();
+                        showAlert(`${count} 条评论已删除`, 'success');
                         updateExportOptions();
                     } else {
-                        const error = await response.json();
-                        showAlert(error.error || '清空失败', 'error');
+                        showAlert('部分评论删除失败', 'error');
                     }
                 } catch (error) {
-                    console.error('Error clearing comments:', error);
-                    showAlert('网络错误，清空失败', 'error');
+                    console.error('Error deleting comments:', error);
+                    showAlert('网络错误，删除失败', 'error');
                 }
             }
         }
